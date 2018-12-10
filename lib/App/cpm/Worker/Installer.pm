@@ -197,7 +197,7 @@ sub fetch {
             if ($subdir) {
                 $cache_dir = File::Spec->catfile($cache_dir, $subdir);
                 unless (-d $cache_dir) {
-                    $self->{logger}->log("Directory $subdir not exists in git repository $uri");
+                    $self->{logger}->log("Directory $subdir not exists in git repository $uri (cache_dir: $cache_dir)");
                     next;
                 }
             }

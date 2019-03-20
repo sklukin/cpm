@@ -174,8 +174,9 @@ sub fetch {
         for my $uri (@uri) {
             my $basename = basename $uri;
             my ($uri, $subdir) = App::cpm::Git->split_uri($uri);
+           my $sd = join "-", split m{/}, $subdir;
 
-            my $cache_dir = $self->_git_cache_dir($uri, $rev);
+            my $cache_dir = $self->_git_cache_dir($uri, "$sd.$rev");
             if (-d $cache_dir) {
                 $self->{logger}->log("Using cache $cache_dir");
                 $using_cache++;
@@ -187,7 +188,8 @@ sub fetch {
                         die "Revision mismatch";
                     }
                     $rev = $long_rev;
-                    $cache_dir = $self->_git_cache_dir($uri, $rev);
+                   my $sd = join "-", split m{/}, $subdir;
+                    $cache_dir = $self->_git_cache_dir($uri, "$sd.$rev");
                 }
                 File::Copy::Recursive::dirmove($tmp_dir, $cache_dir);
             }

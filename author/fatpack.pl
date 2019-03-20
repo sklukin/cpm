@@ -54,7 +54,7 @@ sub git_info {
     chomp $describe;
     my $hash = `git rev-parse --short HEAD`;
     chomp $hash;
-    my $url = "https://github.com/skaji/cpm/tree/$hash";
+    my $url = "https://github.com/my-mail-ru/cpm/tree/$hash";
     ($describe, $url);
 }
 

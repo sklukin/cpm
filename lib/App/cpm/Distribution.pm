@@ -3,6 +3,7 @@ use strict;
 use warnings;
 
 use App::cpm::Logger;
+use App::cpm::Requirement;
 use App::cpm::version;
 use CPAN::DistnameInfo;
 
@@ -16,23 +17,44 @@ use constant STATE_INSTALLED       => 0b100000;
 sub new {
     my ($class, %option) = @_;
     my $uri = delete $option{uri};
-    $uri = [$uri] unless ref $uri;
     my $distfile = delete $option{distfile};
     my $source = delete $option{source} || "cpan";
     my $provides = delete $option{provides} || [];
-    bless {%option, provides => $provides, uri => $uri, distfile => $distfile, source => $source, _state => STATE_RESOLVED}, $class;
+    bless {
+        %option,
+        provides => $provides,
+        uri => $uri,
+        distfile => $distfile,
+        source => $source,
+        _state => STATE_RESOLVED,
+        requirements => {},
+    }, $class;
+}
+
+sub requirements {
+    my ($self, $phase, $req) = @_;
+    if (ref $phase) {
+        my $req = App::cpm::Requirement->new;
+        for my $p (@$phase) {
+            if (my $r = $self->{requirements}{$p}) {
+                $req->merge($r);
+            }
+        }
+        return $req;
+    }
+    $self->{requirements}{$phase} = $req if $req;
+    $self->{requirements}{$phase} || App::cpm::Requirement->new;
 }
 
 for my $attr (qw(
     source
-    configure_requirements
     directory
     distdata
     meta
     uri
     provides
-    requirements
     rev
+    ref
     static_builder
     prebuilt
 )) {
@@ -46,7 +68,7 @@ for my $attr (qw(
 sub distfile {
     my $self = shift;
     $self->{distfile} = shift if @_;
-    $self->{distfile} || $self->{uri}[0];
+    $self->{distfile} || $self->{uri};
 }
 
 sub distvname {
@@ -127,11 +149,18 @@ sub installed {
 }
 
 sub providing {
-    my ($self, $package, $version_range) = @_;
+    my ($self, $package, $version_range, $ref) = @_;
     for my $provide (@{$self->provides}) {
         if ($provide->{package} eq $package) {
             if (!$version_range or App::cpm::version->parse($provide->{version})->satisfy($version_range)) {
-                return 1;
+                if (($provide->{ref} and $ref and $provide->{ref} ne $ref) or (!$provide->{ref} and $ref)) {
+                    my $message = sprintf "%s provides ref %s (%s), but needs %s\n",
+                        $self->distfile, $package, $provide->{ref} || 0, $ref;
+                    App::cpm::Logger->log(result => "WARN", message => $message);
+                    last;
+                } else {
+                    return 1;
+                }
             } else {
                 my $message = sprintf "%s provides %s (%s), but needs %s\n",
                     $self->distfile, $package, $provide->{version} || 0, $version_range;

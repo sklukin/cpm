@@ -19,6 +19,7 @@ use App::cpm::version;
 use App::cpm;
 use Config;
 use Cwd ();
+use File::Copy ();
 use File::Path ();
 use File::Spec;
 use Getopt::Long qw(:config no_auto_abbrev no_ignore_case bundling);
@@ -37,7 +38,7 @@ sub new {
         cpanfile => "cpanfile",
         local_lib => "local",
         cpanmetadb => "https://cpanmetadb.plackperl.org/v1.0/",
-        mirror => ["https://cpan.metacpan.org/"],
+        _default_mirror => 'https://cpan.metacpan.org/',
         retry => 1,
         configure_timeout => 60,
         build_timeout => 3600,
@@ -62,7 +63,7 @@ sub new {
 sub parse_options {
     my $self = shift;
     local @ARGV = @_;
-    my (@mirror, @resolver, @feature);
+    my ($mirror, @resolver, @feature);
     my $with_option = sub {
         my $n = shift;
         ("with-$n", \$self->{"with_$n"}, "without-$n", sub { $self->{"with_$n"} = 0 });
@@ -71,7 +72,7 @@ sub parse_options {
         "L|local-lib-contained=s" => \($self->{local_lib}),
         "color!" => \($self->{color}),
         "g|global" => \($self->{global}),
-        "mirror=s@" => \@mirror,
+        "mirror=s" => \$mirror,
         "v|verbose" => \($self->{verbose}),
         "w|workers=i" => \($self->{workers}),
         "target-perl=s" => \my $target_perl,
@@ -97,16 +98,14 @@ sub parse_options {
         (map $with_option->($_), qw(requires recommends suggests)),
         (map $with_option->($_), qw(configure build test runtime develop)),
         "feature=s@" => \@feature,
+        "show-build-log-on-failure" => \($self->{show_build_log_on_failure}),
     or exit 1;
 
     $self->{local_lib} = maybe_abs($self->{local_lib}, $self->{cwd}) unless $self->{global};
     $self->{home} = maybe_abs($self->{home}, $self->{cwd});
     $self->{resolver} = \@resolver;
     $self->{feature} = \@feature if @feature;
-    $self->{mirror} = \@mirror if @mirror;
-    for my $mirror (@{$self->{mirror}}) {
-        $mirror = $self->normalize_mirror($mirror)
-    }
+    $self->{mirror} = $self->normalize_mirror($mirror) if $mirror;
     $self->{color} = 1 if !defined $self->{color} && -t STDOUT;
     $self->{show_progress} = 1 if !WIN32 && !defined $self->{show_progress} && -t STDOUT;
     if ($target_perl) {
@@ -153,7 +152,15 @@ sub read_argv_from_stdin {
     return \@argv;
 }
 
-sub _inc {
+sub _core_inc {
+    my $self = shift;
+    [
+        (!$self->{exclude_vendor} ? grep {$_} @Config{qw(vendorarch vendorlibexp)} : ()),
+        @Config{qw(archlibexp privlibexp)},
+    ];
+}
+
+sub _search_inc {
     my $self = shift;
     return \@INC if $self->{global};
 
@@ -163,14 +170,10 @@ sub _inc {
         local::lib->resolve_path(local::lib->install_base_arch_path($base)),
         local::lib->resolve_path(local::lib->install_base_perl_path($base)),
     );
-    my @core = (
-        (!$self->{exclude_vendor} ? grep {$_} @Config{qw(vendorarch vendorlibexp)} : ()),
-        @Config{qw(archlibexp privlibexp)},
-    );
     if ($self->{target_perl}) {
         return [@local_lib];
     } else {
-        return [@local_lib, @core];
+        return [@local_lib, @{$self->_core_inc}];
     }
 }
 
@@ -230,7 +233,9 @@ sub cmd_install {
 
     my $master = App::cpm::Master->new(
         logger => $logger,
-        inc    => $self->_inc,
+        core_inc => $self->_core_inc,
+        search_inc => $self->_search_inc,
+        global => $self->{global},
         show_progress => $self->{show_progress},
         (exists $self->{target_perl} ? (target_perl => $self->{target_perl}) : ()),
     );
@@ -279,7 +284,11 @@ sub cmd_install {
             print STDERR "\r" if $self->{show_progress};
             warn sprintf "%d distribution%s installed.\n",
                 $master->installed_distributions, $master->installed_distributions > 1 ? "s" : "";
-            warn "See $self->{home}/build.log for details.\n";
+            if ($self->{show_build_log_on_failure}) {
+                File::Copy::copy($logger->file, \*STDERR);
+            } else {
+                warn "See $self->{home}/build.log for details.\n";
+            }
             return 1;
         }
     }
@@ -300,7 +309,11 @@ sub cmd_install {
     $self->cleanup;
 
     if ($fail) {
-        warn "See $self->{home}/build.log for details.\n";
+        if ($self->{show_build_log_on_failure}) {
+            File::Copy::copy($logger->file, \*STDERR);
+        } else {
+            warn "See $self->{home}/build.log for details.\n";
+        }
         return 1;
     } else {
         return 0;
@@ -363,7 +376,25 @@ sub cleanup {
 sub initial_job {
     my ($self, $master) = @_;
 
-    my (@package, @dist);
+    my (@package, @dist, $resolver);
+
+    if (!@{$self->{argv}}) {
+        my ($requirement, $reinstall);
+        ($requirement, $reinstall, $resolver) = $self->load_cpanfile($self->{cpanfile});
+        my ($is_satisfied, @need_resolve) = $master->is_satisfied($requirement);
+        if (!@$reinstall and $is_satisfied) {
+            warn "All requirements are satisfied.\n";
+            return;
+        } elsif (!defined $is_satisfied) {
+            my ($req) = grep { $_->{package} eq "perl" } @$requirement;
+            die sprintf "%s requires perl %s, but you have only %s\n",
+                $self->{cpanfile}, $req->{version_range}, $self->{target_perl} || $];
+        }
+        push @package, @need_resolve, @$reinstall;
+        return (\@package, \@dist, $resolver);
+    }
+
+    $self->{mirror} ||= $self->{_default_mirror};
     for (@{$self->{argv}}) {
         my $arg = $_; # copy
         my ($package, $dist);
@@ -392,7 +423,7 @@ sub initial_job {
         } elsif (my $d = App::cpm::DistNotation->new_from_dist($arg)) {
             $dist = App::cpm::Distribution->new(
                 source => "cpan",
-                uri => [map { $d->cpan_uri($_) } @{$self->{mirror}}],
+                uri => $d->cpan_uri($self->{mirror}),
                 distfile => $d->distfile,
                 provides => [],
             );
@@ -419,22 +450,6 @@ sub initial_job {
         push @dist, $dist if $dist;
     }
 
-    my $resolver;
-    if (!@{$self->{argv}}) {
-        my ($requirement, $reinstall);
-        ($requirement, $reinstall, $resolver) = $self->load_cpanfile($self->{cpanfile});
-        my ($is_satisfied, @need_resolve) = $master->is_satisfied($requirement);
-        if (!@$reinstall and $is_satisfied) {
-            warn "All requirements are satisfied.\n";
-            return;
-        } elsif (!defined $is_satisfied) {
-            my ($req) = grep { $_->{package} eq "perl" } @$requirement;
-            die sprintf "%s requires perl %s, but you have only %s\n",
-                $self->{cpanfile}, $req->{version_range}, $self->{target_perl} || $];
-        }
-        push @package, @need_resolve, @$reinstall;
-    }
-
     return (\@package, \@dist, $resolver);
 }
 
@@ -442,11 +457,18 @@ sub load_cpanfile {
     my ($self, $file) = @_;
     require Module::CPANfile;
     my $cpanfile = Module::CPANfile->load($file);
+    if (!$self->{mirror}) {
+        my $mirrors = $cpanfile->mirrors;
+        if (@$mirrors) {
+            $self->{mirror} = $self->normalize_mirror($mirrors->[0]);
+        } else {
+            $self->{mirror} = $self->{_default_mirror};
+        }
+    }
     my $prereqs = $cpanfile->prereqs_with(@{ $self->{"feature"} });
     my @phase = grep $self->{"with_$_"}, qw(configure build test runtime develop);
     my @type  = grep $self->{"with_$_"}, qw(requires recommends suggests);
     my $reqs = $prereqs->merged_requirements(\@phase, \@type)->as_string_hash;
-
     my (@package, @reinstall);
     for my $package (sort keys %$reqs) {
         my $option = $cpanfile->options_for_module($package) || {};
@@ -456,6 +478,7 @@ sub load_cpanfile {
             dev => $option->{dev},
         };
         if ($option->{git} && $option->{ref}) {
+            $req->{options} = {git => $option->{git}, ref => $option->{ref}};
             push @reinstall, $req;
         } else {
             push @package, $req;
@@ -482,7 +505,7 @@ sub generate_resolver {
             my $resolver;
             if ($klass =~ /^metadb$/i) {
                 $resolver = App::cpm::Resolver::MetaDB->new(
-                    mirror => @arg ? [map $self->normalize_mirror($_), @arg] : $self->{mirror}
+                    mirror => @arg ? $self->normalize_mirror($arg[0]) : $self->{mirror}
                 );
             } elsif ($klass =~ /^metacpan$/i) {
                 $resolver = App::cpm::Resolver::MetaCPAN->new(dev => $self->{dev});
@@ -494,7 +517,7 @@ sub generate_resolver {
                 } elsif (@arg == 1) {
                     $mirror = $arg[0];
                 } else {
-                    $mirror = $self->{mirror}[0];
+                    $mirror = $self->{mirror};
                 }
                 $resolver = App::cpm::Resolver::02Packages->new(
                     $path ? (path => $path) : (),
@@ -505,7 +528,7 @@ sub generate_resolver {
                 require App::cpm::Resolver::Snapshot;
                 $resolver = App::cpm::Resolver::Snapshot->new(
                     path => $self->{snapshot},
-                    mirror => @arg ? [map $self->normalize_mirror($_), @arg] : $self->{mirror},
+                    mirror => @arg ? $self->normalize_mirror($arg[0]) : $self->{mirror},
                 );
             } else {
                 die "Unknown resolver: $klass\n";
@@ -517,13 +540,11 @@ sub generate_resolver {
 
     if ($self->{mirror_only}) {
         require App::cpm::Resolver::02Packages;
-        for my $mirror (@{$self->{mirror}}) {
-            my $resolver = App::cpm::Resolver::02Packages->new(
-                mirror => $mirror,
-                cache => "$self->{home}/sources",
-            );
-            $cascade->add($resolver);
-        }
+        my $resolver = App::cpm::Resolver::02Packages->new(
+            mirror => $self->{mirror},
+            cache => "$self->{home}/sources",
+        );
+        $cascade->add($resolver);
         return $cascade;
     }
 

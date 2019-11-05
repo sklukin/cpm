@@ -2,7 +2,7 @@ package App::cpm;
 use strict;
 use warnings;
 
-our $VERSION = '0.978';
+our $VERSION = '0.988';
 our ($GIT_DESCRIBE, $GIT_URL);
 
 1;
@@ -21,7 +21,7 @@ App::cpm - a fast CPAN module installer
 =head1 DESCRIPTION
 
 =for html
-<a href="https://raw.githubusercontent.com/skaji/cpm/master/xt/demo.gif"><img src="https://raw.githubusercontent.com/skaji/cpm/master/xt/demo.gif" alt="demo" style="max-width:100%;"></a>
+<a href="https://skaji.github.io/images/cpm-Plack.svg"><img src="https://skaji.github.io/images/cpm-Plack.svg" alt="demo" style="max-width:100%;"></a>
 
 cpm is a fast CPAN module installer, which uses L<Menlo> in parallel.
 
@@ -94,20 +94,6 @@ Copyright 2015 Shoichi Kaji E<lt>skaji@cpan.orgE<gt>
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.
-
-=head1 COMMUNITY
-
-=over 4
-
-=item L<https://github.com/skaji/cpm>
-
-Code repository and issue tracker
-
-=item L<https://gitter.im/skaji/cpm>
-
-Chat room. I would like to hear your thoughts about CPAN clients (not necessary about cpm)
-
-=back
 
 =head1 SEE ALSO
 

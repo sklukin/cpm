@@ -41,12 +41,12 @@ sub work {
                 ok => 1,
                 directory => $result->{directory},
                 meta => $result->{meta},
-                configure_requirements => $result->{configure_requirements},
+                requirements => $result->{requirements},
                 provides => $result->{provides},
                 using_cache => $result->{using_cache},
                 prebuilt => $result->{prebuilt},
-                requirements => $result->{requirements},
                 rev => $result->{rev},
+                ($job->{ref} ? (ref => $job->{ref}) : ()),
                 version => $result->{version},
                 distvname => $result->{distvname},
             };
@@ -148,8 +148,7 @@ sub _fetch_git {
 
 sub enable_prebuilt {
     my ($self, $source, $uri) = @_;
-    return 1 if $source eq 'git';
-    $uri = $uri->[0] if ref $uri;
+    return 1 if $self->{prebuilt} && $source eq 'git';
     $self->{prebuilt} && !$self->{prebuilt}->skip($uri) && $TRUSTED_MIRROR->($uri);
 }
 
@@ -159,11 +158,12 @@ sub fetch {
 
     my $source   = $job->{source};
     my $distfile = $job->{distfile};
-    my @uri      = ref $job->{uri} ? @{$job->{uri}} : ($job->{uri});
     my $rev      = $job->{rev};
+    my $uri      = $job->{uri};
 
-    if ($self->enable_prebuilt($source, $uri[0])) {
-        if (my $result = $self->find_prebuilt($source, $uri[0], $rev)) {
+    if ($self->enable_prebuilt($source, $uri)) {
+        if (my $result = $self->find_prebuilt($source, $uri, $rev)) {
+            $result->{ref} = $job->{ref} if $job->{ref};
             $self->{logger}->log("Using prebuilt $result->{directory}");
             return $result;
         }
@@ -171,39 +171,38 @@ sub fetch {
 
     my ($dir, $using_cache, $name, $version);
     if ($source eq "git") {
-        for my $uri (@uri) {
-            my $basename = basename $uri;
-            my ($uri, $subdir) = App::cpm::Git->split_uri($uri);
-           my $sd = join "-", split m{/}, $subdir;
+        my $basename = basename $uri;
+        my ($uri, $subdir) = App::cpm::Git->split_uri($uri);
+        my $sd = $subdir ? join("-", split m{/}, $subdir) : '';
 
-            my $cache_dir = $self->_git_cache_dir($uri, "$sd.$rev");
-            if (-d $cache_dir) {
-                $self->{logger}->log("Using cache $cache_dir");
-                $using_cache++;
-            } else {
-                my ($tmp_dir, $long_rev) = $self->_fetch_git($uri, $rev);
-                next unless $tmp_dir;
-                if ($long_rev ne $rev) {
-                    unless (index($long_rev, $rev) == 0) {
-                        die "Revision mismatch";
-                    }
-                    $rev = $long_rev;
-                   my $sd = join "-", split m{/}, $subdir;
-                    $cache_dir = $self->_git_cache_dir($uri, "$sd.$rev");
+        my $cache_dir = $self->_git_cache_dir($uri, "$sd.$rev");
+        if (-d $cache_dir) {
+            $self->{logger}->log("Using cache $cache_dir");
+            $using_cache++;
+        } else {
+            my ($tmp_dir, $long_rev) = $self->_fetch_git($uri, $rev);
+            next unless $tmp_dir;
+            if ($long_rev ne $rev) {
+                unless (index($long_rev, $rev) == 0) {
+                    die "Revision mismatch";
                 }
-                File::Copy::Recursive::dirmove($tmp_dir, $cache_dir);
+                $rev = $long_rev;
+                $cache_dir = $self->_git_cache_dir($uri, "$sd.$rev");
             }
+            File::Copy::Recursive::dirmove($tmp_dir, $cache_dir);
+        }
 
-            $version = App::cpm::Git->version($cache_dir);
+        $version = App::cpm::Git->version($cache_dir);
 
-            if ($subdir) {
-                $cache_dir = File::Spec->catfile($cache_dir, $subdir);
-                unless (-d $cache_dir) {
-                    $self->{logger}->log("Directory $subdir not exists in git repository $uri (cache_dir: $cache_dir)");
-                    next;
-                }
+        my $sd_exist = 1;
+        if ($subdir) {
+            $cache_dir = File::Spec->catfile($cache_dir, $subdir);
+            unless (-d $cache_dir) {
+                $self->{logger}->log("Directory $subdir not exists in git repository $uri (cache_dir: $cache_dir)");
+                $sd_exist = 0;
             }
-
+        }
+        if ($sd_exist) {
             $dir = File::Temp::tempdir(
                 "$basename-XXXXX",
                 CLEANUP => 0,
@@ -215,44 +214,38 @@ sub fetch {
             if (my ($n) = $basename =~ /^(?:(?:perl|perl5|p5)-)?([\w-]+)(?:\.git)?$/) {
                 $name = $n if -f File::Spec->catfile($dir, 'lib', split(/-/, $n)) . '.pm';
             }
-
-            last;
         }
+
     } elsif ($source eq "local") {
-        for my $uri (@uri) {
-            $self->{logger}->log("Copying $uri");
-            $uri =~ s{^file://}{};
-            $uri = $self->menlo->maybe_abs($uri);
-            my $basename = basename $uri;
-            my $g = pushd $self->menlo->{base};
-            if (-d $uri) {
-                my $dest = File::Temp::tempdir(
-                    "$basename-XXXXX",
-                    CLEANUP => 0,
-                    DIR => $self->menlo->{base},
-                );
-                File::Copy::Recursive::dircopy($uri, $dest);
-                $dir = $dest;
-                last;
-            } elsif (-f $uri) {
-                my $dest = $basename;
-                File::Copy::copy($uri, $dest);
-                $dir = $self->menlo->unpack($basename);
-                $dir = File::Spec->catdir($self->menlo->{base}, $dir);
-                last;
-            }
+        $self->{logger}->log("Copying $uri");
+        $uri =~ s{^file://}{};
+        $uri = $self->menlo->maybe_abs($uri);
+        my $basename = basename $uri;
+        my $g = pushd $self->menlo->{base};
+        if (-d $uri) {
+            my $dest = File::Temp::tempdir(
+                "$basename-XXXXX",
+                CLEANUP => 0,
+                DIR => $self->menlo->{base},
+            );
+            File::Copy::Recursive::dircopy($uri, $dest);
+            $dir = $dest;
+        } elsif (-f $uri) {
+            my $dest = $basename;
+            File::Copy::copy($uri, $dest);
+            $dir = $self->menlo->unpack($basename);
+            $dir = File::Spec->catdir($self->menlo->{base}, $dir) if $dir;
         }
     } elsif ($source =~ /^(?:cpan|https?)$/) {
         my $g = pushd $self->menlo->{base};
-        FETCH: for my $uri (@uri) {
+
+        FETCH: {
             my $basename = basename $uri;
             if ($uri =~ s{^file://}{}) {
                 $self->{logger}->log("Copying $uri");
                 File::Copy::copy($uri, $basename)
-                    or next FETCH;
-                $dir = $self->menlo->unpack($basename)
-                    or next FETCH;
-                last FETCH;
+                    or last FETCH;
+                $dir = $self->menlo->unpack($basename);
             } else {
                 local $self->menlo->{save_dists};
                 if ($distfile and $TRUSTED_MIRROR->($uri)) {
@@ -261,19 +254,15 @@ sub fetch {
                         $self->{logger}->log("Using cache $cache");
                         File::Copy::copy($cache, $basename);
                         $dir = $self->menlo->unpack($basename);
-                        unless ($dir) {
-                            unlink $cache;
-                            next FETCH;
+                        if ($dir) {
+                            $using_cache++;
+                            last FETCH;
                         }
-                        $using_cache++;
-                        last FETCH;
-                    } else {
-                        $self->menlo->{save_dists} = $self->{cache};
+                        unlink $cache;
                     }
+                    $self->menlo->{save_dists} = $self->{cache};
                 }
                 $dir = $self->menlo->fetch_module({uris => [$uri], pathname => $distfile})
-                    or next FETCH;
-                last FETCH;
             }
         }
         $dir = File::Spec->catdir($self->menlo->{base}, $dir) if $dir;
@@ -296,23 +285,24 @@ sub fetch {
         # If Build.PL or Makefile.PL exist then META will be loaded from MYMETA.json on configure
     }
 
-    my $configure_requirement = App::cpm::Requirement->new;
+    my $req = { configure => App::cpm::Requirement->new };
     if ($meta && $self->menlo->opts_in_static_install($meta)) {
         $self->{logger}->log("Distribution opts in x_static_install: $meta->{x_static_install}");
     } elsif (my $prereqs_source = $meta || -f 'cpanfile' && Module::CPANfile->load('cpanfile')) {
-        $configure_requirement = $self->_extract_configure_requirements($prereqs_source, $distfile);
+        $req = { configure => $self->_extract_configure_requirements($prereqs_source, $distfile) };
     }
 
     my $p = $meta && $meta->{provides} || $self->menlo->extract_packages($meta, ".");
-    my $provides = [ map +{ package => $_, version => $p->{$_}{version} }, sort keys %$p ];
+    my $provides = [ map +{ package => $_, version => $p->{$_}{version}, ($job->{ref} ? (ref => $job->{ref}):()) }, sort keys %$p ];
 
     return +{
         directory => $dir,
         meta => $meta,
-        configure_requirements => $configure_requirement->as_array,
+        requirements => $req,
         provides => $provides,
         using_cache => $using_cache,
         rev => $rev,
+        ($job->{ref} ? (ref => $job->{ref}) : ()), 
         version => $version,
     };
 }
@@ -345,13 +335,14 @@ sub find_prebuilt {
     }
 
     my $phase  = $self->{notest} ? [qw(build runtime)] : [qw(build test runtime)];
-    my $requirement = App::cpm::Requirement->new;
-    if ($meta && !$self->menlo->opts_in_static_install($meta)) {
+
+    my %req;
+    if (!$self->menlo->opts_in_static_install($meta)) {
         # XXX Actually we don't need configure requirements for prebuilt.
         # But requires them for consistency for now.
-        $requirement = $self->_extract_configure_requirements($meta, $distfile);
+        %req = ( configure => $self->_extract_configure_requirements($meta, $distfile) );
     }
-    $requirement->merge($self->_extract_requirements($meta, $phase));
+    %req = (%req, %{$self->_extract_requirements($meta, $phase)});
 
     my $json = do {
         open my $fh, "<", 'blib/meta/install.json' or die;
@@ -366,7 +357,7 @@ sub find_prebuilt {
         distvname => $distvname,
         provides => $provides,
         prebuilt => 1,
-        requirements => $requirement->as_array,
+        requirements => \%req,
         rev => $rev,
     };
 }
@@ -448,7 +439,7 @@ sub _load_metafile {
 # because the test "-f Build.PL" or similar is present
 sub _extract_configure_requirements {
     my ($self, $meta, $distfile) = @_;
-    my $requirement = $self->_extract_requirements($meta, [qw(configure)]);
+    my $requirement = $self->_extract_requirements($meta, [qw(configure)])->{configure};
     if ($requirement->empty and -f "Build.PL" and ($distfile || "") !~ m{/Module-Build-[0-9v]}) {
         $requirement->add("Module::Build" => "0.38");
     }
@@ -459,17 +450,25 @@ sub _extract_configure_requirements {
 }
 
 sub _extract_requirements {
-    my ($self, $meta, $phases) = @_;
+    my ($self, $meta_or_cpanfile, $phases) = @_;
     $phases = [$phases] unless ref $phases;
-    my $hash = $meta->effective_prereqs->as_string_hash;
-    my $requirement = App::cpm::Requirement->new;
-    for my $phase (@$phases) {
-        my $reqs = ($hash->{$phase} || +{})->{requires} || +{};
-        for my $package (sort keys %$reqs) {
-            $requirement->add($package, $reqs->{$package});
-        }
+    unless (ref $meta_or_cpanfile) {
+        require Module::CPANfile;
+        $meta_or_cpanfile = Module::CPANfile->load($meta_or_cpanfile);
     }
-    $requirement;
+    my $can_get_options = $meta_or_cpanfile->can('options_for_module') ? 1 : 0;
+    my $hash = $meta_or_cpanfile->effective_prereqs->as_string_hash;
+    my %req;
+    for my $phase (@$phases) {
+        my $req = App::cpm::Requirement->new;
+        my $from = ($hash->{$phase} || +{})->{requires} || +{};
+        for my $package (sort keys %$from) {
+            $req->add($package, ($can_get_options && $meta_or_cpanfile->options_for_module($package) ? ({ version_range => $from->{$package}, options => $meta_or_cpanfile->options_for_module($package)}) : ($from->{$package})));
+            #$req->has($package)->{options} = $meta_or_cpanfile->options_for_module($package) if $meta_or_cpanfile->can('options_for_module');
+        }
+        $req{$phase} = $req;
+    }
+    \%req;
 }
 
 sub _retry {
@@ -518,21 +517,16 @@ sub configure {
     }
     return unless $configure_ok;
 
-    if (-f 'cpanfile' && !(-f 'META.json' || -f 'META.yml')) {
-        # Incomplete distribution (probably from git), merge cpanfile into MYMETA
-        my $cpanfile = Module::CPANfile->load('cpanfile');
-        $cpanfile->merge_meta('MYMETA.json') if -f 'MYMETA.json';
-        $cpanfile->merge_meta('MYMETA.yml') if -f 'MYMETA.yml';
-    }
 
     my $phase = $self->{notest} ? [qw(build runtime)] : [qw(build test runtime)];
+    my $dd_distfile = $source eq 'git' ? "$job->{uri}\@$job->{rev}" : $distfile;
     my $mymeta = $self->_load_metafile($distfile, 'MYMETA.json', 'MYMETA.yml');
-    my $dd_distfile = $source eq 'git' ? "$job->{uri}->[0]\@$job->{rev}" : $distfile;
     my $distdata = $self->_build_distdata($source, $dd_distfile, $mymeta);
-    my $requirement = $self->_extract_requirements($mymeta, $phase);
+    my $req = $self->_extract_requirements((-f 'cpanfile' ? 'cpanfile' : $mymeta), $phase);
+
     return +{
         distdata => $distdata,
-        requirements => $requirement->as_array,
+        requirements => $req,
         static_builder => $static_builder,
     };
 }

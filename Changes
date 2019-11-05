@@ -2,6 +2,43 @@ Revision history for App-cpm
 
 {{$NEXT}}
 
+0.988  2019-11-01 00:24:15 JST
+        - Do not use "tar --force-local" for bsdtar in Win32 (#158)
+
+0.987  2019-10-31 19:55:03 JST
+        - Emit unpack errors if any
+
+0.986  2019-10-14 01:50:48 JST
+        - Call tar with -o flag; Use the user and group of the user running the program
+          rather than those specified in the archive (autarch #156)
+
+0.985  2019-09-29 11:50:59 JST
+        - Introduce --show-build-log-on-failure option (#155)
+        - Document that cpm can read modules from STDIN
+
+0.984  2019-09-27 20:23:38 JST
+        - Document that multiple --mirror options are ignored (willsheppard #150, #154)
+
+0.983  2019-08-08 10:45:36 EEST
+    [Internal Refactor]
+        - Save requirements per phase (#151)
+
+0.982  2019-07-20 19:19:11 JST
+    [Internal Refactor]
+        - Use own Unpacker class (#149)
+
+0.981  2019-07-20 09:24:23 JST
+    [Internal Refactor]
+        - Use plain string mirror and uri
+
+0.980  2019-04-26 09:28:47 BST
+        - Improve compatibility between `cpm install -L` and `cpanm -L`;
+          check if dependencies in core INC are actually core (reported by jberger #143, #147)
+
+0.979  2019-03-17 21:04:54 JST
+        - Respect mirror in cpanfile (#145)
+        - Update image in pod
+
 0.978  2018-08-01 22:06:06 JST
         - Fix detection of circular dependencies
 

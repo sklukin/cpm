@@ -26,7 +26,7 @@ sub add {
     my $self = shift;
     my %package = (@_, @_ % 2 ? (0) : ());
     for my $package (sort keys %package) {
-        my $version_range = $package{$package};
+        my ($version_range, $options) = ref $package{$package} ? ($package{$package}->{version_range}, $package{$package}->{options}) : ($package{$package}, undef);
         if (my ($found) = grep { $_->{package} eq $package } @{$self->{requirement}}) {
             my $merged = eval {
                 App::cpm::version::range_merge($found->{version_range}, $version_range);
@@ -41,8 +41,13 @@ sub add {
                 }
             }
             $found->{version_range} = $merged;
+            if ($options && $options->{ref} && $found->{options} && $found->{options}->{ref} ne $options->{ref}) {
+                $@ = "Coudn't merge ref '" . $found->{options}->{ref} . "' with '" . $options->{ref} . "' for package '$package'";
+                warn $@; #XXX
+                return; 
+            }
         } else {
-            push @{$self->{requirement}}, { package => $package, version_range => $version_range };
+            push @{$self->{requirement}}, { package => $package, version_range => $version_range, ($options ? (options => $options) : ()) };
         }
     }
     return 1;
@@ -50,7 +55,7 @@ sub add {
 
 sub merge {
     my ($self, $other) = @_;
-    $self->add(map { ($_->{package}, $_->{version_range}) } @{ $other->as_array });
+    $self->add(map { ($_->{package} => ($_->{options} ? {version_range => $_->{version_range}, options => $_->{options}} : $_->{version_range})) } @{ $other->as_array });
 }
 
 sub delete :method {

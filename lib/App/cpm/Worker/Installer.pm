@@ -288,7 +288,7 @@ sub fetch {
     my $req = { configure => App::cpm::Requirement->new };
     if ($meta && $self->menlo->opts_in_static_install($meta)) {
         $self->{logger}->log("Distribution opts in x_static_install: $meta->{x_static_install}");
-    } elsif (my $prereqs_source = $meta || -f 'cpanfile' && Module::CPANfile->load('cpanfile')) {
+    } elsif (my $prereqs_source = (-f 'cpanfile' && Module::CPANfile->load('cpanfile')) || $meta) {
         $req = { configure => $self->_extract_configure_requirements($prereqs_source, $distfile) };
     }
 
@@ -342,7 +342,12 @@ sub find_prebuilt {
         # But requires them for consistency for now.
         %req = ( configure => $self->_extract_configure_requirements($meta, $distfile) );
     }
-    %req = (%req, %{$self->_extract_requirements($meta, $phase)});
+    if (my $prereqs_source = (-f 'cpanfile' && Module::CPANfile->load('cpanfile')) || $meta) {
+        %req = ( %req, %{$self->_extract_configure_requirements($prereqs_source, $phase)} );
+    }
+    else {
+        die "Can't found meta or cpanfile";
+    }
 
     my $json = do {
         open my $fh, "<", 'blib/meta/install.json' or die;

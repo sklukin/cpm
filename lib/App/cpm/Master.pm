@@ -336,6 +336,11 @@ sub _in_core_inc {
     !!grep { $file =~ /^\Q$_/ } @{$self->{core_inc}};
 }
 
+sub _in_core_inc {
+    my ($self, $file) = @_;
+    !!grep { $file =~ /^\Q$_/ } @{$self->{core_inc}};
+}
+
 sub is_core {
     my ($self, $package, $version_range) = @_;
     my $target_perl = $self->{target_perl};

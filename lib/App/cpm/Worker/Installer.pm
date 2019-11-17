@@ -45,10 +45,10 @@ sub work {
                 provides => $result->{provides},
                 using_cache => $result->{using_cache},
                 prebuilt => $result->{prebuilt},
-                rev => $result->{rev},
-                ($job->{ref} ? (ref => $job->{ref}) : ()),
-                version => $result->{version},
-                distvname => $result->{distvname},
+                rev => $result->{rev}, #n.shulyakovskiy
+                ($job->{ref} ? (ref => $job->{ref}) : ()), #n.shulyakovskiy
+                version => $result->{version}, #n.shulyakovskiy
+                distvname => $result->{distvname}, #n.shulyakovskiy
             };
         } else {
             $self->{logger}->log("Failed to fetch/configure distribution");
@@ -171,6 +171,7 @@ sub fetch {
 
     my ($dir, $using_cache, $name, $version);
     if ($source eq "git") {
+<<<<<<< HEAD
         my $basename = basename $uri;
         my ($uri, $subdir) = App::cpm::Git->split_uri($uri);
         my $sd = $subdir ? join("-", split m{/}, $subdir) : '';
@@ -480,6 +481,7 @@ sub _extract_requirements {
                 $req{$phase}->add($package, ($can_get_options && $meta_or_cpanfile->options_for_module($package) ? ({ version_range => $from->{$package}, options => $meta_or_cpanfile->options_for_module($package)}) : ($from->{$package})));
             }
         }
+        $req{$phase} = $req;
     }
     \%req;
 }

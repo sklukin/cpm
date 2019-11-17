@@ -171,7 +171,6 @@ sub fetch {
 
     my ($dir, $using_cache, $name, $version);
     if ($source eq "git") {
-<<<<<<< HEAD
         my $basename = basename $uri;
         my ($uri, $subdir) = App::cpm::Git->split_uri($uri);
         my $sd = $subdir ? join("-", split m{/}, $subdir) : '';
@@ -481,7 +480,6 @@ sub _extract_requirements {
                 $req{$phase}->add($package, ($can_get_options && $meta_or_cpanfile->options_for_module($package) ? ({ version_range => $from->{$package}, options => $meta_or_cpanfile->options_for_module($package)}) : ($from->{$package})));
             }
         }
-        $req{$phase} = $req;
     }
     \%req;
 }

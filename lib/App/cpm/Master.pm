@@ -216,7 +216,7 @@ sub _calculate_jobs {
             } elsif (@need_resolve and !$dist->deps_registered) {
                 $dist->deps_registered(1);
                 my $msg = sprintf "Found configure dependencies: %s",
-                    join(", ", map { sprintf "%s (%s)", $_->{package}, $_->{version_range} || 0 }  @need_resolve);
+                    join(", ", map { sprintf "%s (%s%s)", $_->{package}, $_->{version_range} || 0, ($_->{options} && $_->{options}->{git} ? sprintf(", %s %s", $_->{options}->{git}, $_->{options}->{ref}||'master'): '') }  @need_resolve);
                 $self->{logger}->log($msg);
                 my $ok = $self->_register_resolve_job(@need_resolve);
                 $self->{_fail_install}{$dist->distfile}++ unless $ok;
@@ -258,7 +258,7 @@ sub _calculate_jobs {
             } elsif (@need_resolve and !$dist->deps_registered) {
                 $dist->deps_registered(1);
                 my $msg = sprintf "Found dependencies: %s",
-                    join(", ", map { sprintf "%s (%s)", $_->{package}, $_->{version_range} || 0 }  @need_resolve);
+                    join(", ", map { sprintf "%s (%s%s)", $_->{package}, ($_->{version_range} || 0), ($_->{options} && $_->{options}->{git} ? sprintf(", %s %s", $_->{options}->{git}, $_->{options}->{ref}||'master'): '') }  @need_resolve);
                 $self->{logger}->log($msg);
                 my $ok = $self->_register_resolve_job(@need_resolve);
                 $self->{_fail_install}{$dist->distfile}++ unless $ok;

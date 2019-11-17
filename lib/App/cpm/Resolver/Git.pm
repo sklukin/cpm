@@ -49,7 +49,7 @@ sub resolve {
             ($rev) = `git ls-remote $uri HEAD` =~ /^(\p{IsXDigit}+)\s/;
         }
     }
-    return { error => 'repo or ref not found' } unless $rev;
+    return { error => 'repo or ref (`' . ($job->{ref}||'master') . '`) not found' } unless $rev;
 
     return {
         source => 'git',

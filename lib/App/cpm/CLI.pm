@@ -553,7 +553,7 @@ sub generate_resolver {
 
     if (!@{$self->{argv}} and -f $self->{snapshot}) {
         if (!eval { require App::cpm::Resolver::Snapshot }) {
-            die "To load $self->{snapshot}, you need to install Carton::Snapshot.\n";
+            die "To load $self->{snapshot}, you need to install Carton::Snapshot.\n $@";
         }
         warn "Loading distributions from $self->{snapshot}...\n";
         my $resolver = App::cpm::Resolver::Snapshot->new(

@@ -54,6 +54,7 @@ sub version {
     }
     unless ($version) {
         chomp(my $time = `git show -s --pretty=format:%at`);
+        die "Can't calculate version " . `pwd` unless $time;
         $version = sprintf "0.000_%09d", $time / 4; # divide by 4 to fit MAX_INT32 into 3 triples
     }
     return $version;
@@ -66,7 +67,7 @@ sub rewrite_version {
         next unless -f $file;
         my $meta = CPAN::Meta->load_file($file);
         $meta->{version} = $version;
-        $meta->save($file);
+        $meta->save($file, {version => ($file =~ /json/ ? 2 : 1)});
     }
 
     File::Find::find(sub {

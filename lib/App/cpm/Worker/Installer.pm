@@ -176,12 +176,13 @@ sub fetch {
         my $sd = $subdir ? join("-", split m{/}, $subdir) : '';
 
         my $cache_dir = $self->_git_cache_dir($uri, "$sd.$rev");
-        if (-d $cache_dir) {
+
+        if (-d $cache_dir && -d $cache_dir . '/.git') {
             $self->{logger}->log("Using cache $cache_dir");
             $using_cache++;
         } else {
             my ($tmp_dir, $long_rev) = $self->_fetch_git($uri, $rev);
-            next unless $tmp_dir;
+            die "Error clone $uri: Empty dir" unless $tmp_dir;
             if ($long_rev ne $rev) {
                 unless (index($long_rev, $rev) == 0) {
                     die "Revision mismatch";
@@ -286,11 +287,16 @@ sub fetch {
     }
 
     my $req = { configure => App::cpm::Requirement->new };
-    if ($meta && $self->menlo->opts_in_static_install($meta)) {
-        $self->{logger}->log("Distribution opts in x_static_install: $meta->{x_static_install}");
-    } elsif (my $prereqs_source = (-f 'cpanfile' && Module::CPANfile->load('cpanfile')) || $meta) {
-        $req = { configure => $self->_extract_configure_requirements($prereqs_source, $distfile) };
-    }
+    eval {
+        if ($meta && $self->menlo->opts_in_static_install($meta)) {
+            $self->{logger}->log("Distribution opts in x_static_install: $meta->{x_static_install}");
+        } else {
+            my $cpanfile = -f 'cpanfile' ? 'cpanfile' : undef; 
+            my $meta_files = [grep {$_} $cpanfile, $meta];
+            $req = { configure => $self->_extract_configure_requirements($meta_files, $distfile) } if @$meta_files;
+        }
+    };
+    die "Error load requirments for $dir: $@" if $@;
 
     my $p = $meta && $meta->{provides} || $self->menlo->extract_packages($meta, ".");
     my $provides = [ map +{ package => $_, version => $p->{$_}{version}, ($job->{ref} ? (ref => $job->{ref}):()) }, sort keys %$p ];
@@ -455,23 +461,25 @@ sub _extract_configure_requirements {
 }
 
 sub _extract_requirements {
-    my ($self, $meta_or_cpanfile, $phases) = @_;
+    my ($self, $meta_and_cpanfile, $phases) = @_;
     $phases = [$phases] unless ref $phases;
-    unless (ref $meta_or_cpanfile) {
-        require Module::CPANfile;
-        $meta_or_cpanfile = Module::CPANfile->load($meta_or_cpanfile);
-    }
-    my $can_get_options = $meta_or_cpanfile->can('options_for_module') ? 1 : 0;
-    my $hash = $meta_or_cpanfile->effective_prereqs->as_string_hash;
+    die "Empty metadata" if !$meta_and_cpanfile || (ref $meta_and_cpanfile eq 'ARRAY' && !@$meta_and_cpanfile);
+    $meta_and_cpanfile = [$meta_and_cpanfile] unless ref $meta_and_cpanfile eq 'ARRAY';
     my %req;
-    for my $phase (@$phases) {
-        my $req = App::cpm::Requirement->new;
-        my $from = ($hash->{$phase} || +{})->{requires} || +{};
-        for my $package (sort keys %$from) {
-            $req->add($package, ($can_get_options && $meta_or_cpanfile->options_for_module($package) ? ({ version_range => $from->{$package}, options => $meta_or_cpanfile->options_for_module($package)}) : ($from->{$package})));
-            #$req->has($package)->{options} = $meta_or_cpanfile->options_for_module($package) if $meta_or_cpanfile->can('options_for_module');
+    for my $meta_or_cpanfile (@$meta_and_cpanfile) {
+        unless (ref $meta_or_cpanfile) {
+            require Module::CPANfile;
+            $meta_or_cpanfile = Module::CPANfile->load($meta_or_cpanfile);
         }
-        $req{$phase} = $req;
+        my $can_get_options = $meta_or_cpanfile->can('options_for_module') ? 1 : 0;
+        my $hash = $meta_or_cpanfile->effective_prereqs->as_string_hash;
+        for my $phase (@$phases) {
+            $req{$phase} ||= App::cpm::Requirement->new;
+            my $from = ($hash->{$phase} || +{})->{requires} || +{};
+            for my $package (sort keys %$from) {
+                $req{$phase}->add($package, ($can_get_options && $meta_or_cpanfile->options_for_module($package) ? ({ version_range => $from->{$package}, options => $meta_or_cpanfile->options_for_module($package)}) : ($from->{$package})));
+            }
+        }
     }
     \%req;
 }
@@ -527,7 +535,7 @@ sub configure {
     my $dd_distfile = $source eq 'git' ? "$job->{uri}\@$job->{rev}" : $distfile;
     my $mymeta = $self->_load_metafile($distfile, 'MYMETA.json', 'MYMETA.yml');
     my $distdata = $self->_build_distdata($source, $dd_distfile, $mymeta);
-    my $req = $self->_extract_requirements((-f 'cpanfile' ? 'cpanfile' : $mymeta), $phase);
+    my $req = $self->_extract_requirements([(-f 'cpanfile' ? 'cpanfile' : ()), $mymeta], $phase);
 
     return +{
         distdata => $distdata,

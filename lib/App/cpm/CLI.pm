@@ -480,7 +480,7 @@ sub load_cpanfile {
             version_range => $reqs->{$package},
             dev => $option->{dev},
         };
-        if (($option->{git} && $option->{ref} && $option->{ref} !~ /^[0-9a-f]+$/) || $self->{reinstall}) {
+        if (($option->{git} && $option->{ref} && $option->{ref} !~ /^[0-9a-f]+$/) || ($package ne 'perl' && $self->{reinstall})) {
             $req->{options} = {git => $option->{git}, ($option->{ref} ? (ref => $option->{ref}) : ())} if $option->{git};
             push @reinstall, $req;
         } else {

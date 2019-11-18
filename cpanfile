@@ -1,4 +1,4 @@
-#requires 'perl', '5.008001';
+requires 'perl', '5.008001';
 
 requires 'CPAN::Common::Index';
 requires 'CPAN::DistnameInfo';
@@ -30,7 +30,5 @@ on develop => sub {
     requires 'Test::More', '0.98';
     requires 'Archive::Tar';
     requires 'Archive::Zip', '!= 1.66';
-    requires 'App::FatPacker::Simple', 0;
 };
 
-requires 'ExtUtils::MakeMaker::CPANfile' => 0;

@@ -43,7 +43,6 @@ sub resolve {
         my $version = $found->provides->{$_}{version};
         +{ package => $package, version => $version };
     } sort keys %{$found->provides};
-
     if (App::cpm::Git->is_git_uri($found->pathname)) {
         my $uri = $found->pathname;
         $uri =~ s/@(\p{IsXDigit}{40})$//;
@@ -55,12 +54,12 @@ sub resolve {
             source => "git",
             uri => $uri,
             ref => $job->{ref},
-            rev => $1,
+            rev => $rev,
             version  => $version || 0,
             provides => \@provides,
         };
     } elsif ($job->{source} && $job->{source} eq 'git') {
-        return;
+        return {error => "Last installation not from git"};
     }
 
     my $dist = App::cpm::DistNotation->new_from_dist($found->distfile);

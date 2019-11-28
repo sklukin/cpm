@@ -68,12 +68,12 @@ sub fail {
         my @circular = @{$detected->{$distfile}};
         my $msg = join " -> ", map { $self->distribution($_)->distvname } @circular;
         local $self->{logger}{context} = $distvname;
-        $self->{logger}->log("Detected circular dependencies $msg");
-        $self->{logger}->log("Failed to install distribution");
+        $self->{logger}->log_fail("Detected circular dependencies $msg");
+        $self->{logger}->log_fail("Failed to install distribution");
     }
     for my $dist (sort { $a->distvname cmp $b->distvname } grep { !$detected->{$_->distfile} } @not_installed) {
         local $self->{logger}{context} = $dist->distvname;
-        $self->{logger}->log("Failed to install distribution, "
+        $self->{logger}->log_fail("Failed to install distribution, "
                             ."because of installing some dependencies failed");
     }
 
@@ -198,8 +198,11 @@ sub _calculate_jobs {
         for my $dist (@dists) {
             local $self->{logger}->{context} = $dist->distvname;
             my $dist_requirements = $dist->requirements('configure')->as_array;
-            my ($is_satisfied, @need_resolve) = $self->is_satisfied($dist_requirements);
-            if ($is_satisfied) {
+            my ($is_satisfied, $conflict_req, @need_resolve) = $self->is_satisfied($dist_requirements);
+            if ($conflict_req) {
+                $dist->deps_registered(1);
+                $self->{_fail_install}{$dist->distfile}++;
+            } elsif ($is_satisfied) {
                 $dist->registered(1);
                 $self->add_job(
                     type => "configure",
@@ -224,7 +227,7 @@ sub _calculate_jobs {
                 my ($req) = grep { $_->{package} eq "perl" } @$dist_requirements;
                 my $msg = sprintf "%s requires perl %s, but you have only %s",
                     $dist->distvname, $req->{version_range}, $self->{target_perl} || $];
-                $self->{logger}->log($msg);
+                $self->{logger}->log_fail($msg);
                 App::cpm::Logger->log(result => "FAIL", message => $msg);
                 $self->{_fail_install}{$dist->distfile}++;
             }
@@ -238,8 +241,11 @@ sub _calculate_jobs {
             my @phase = qw(build test runtime);
             push @phase, 'configure' if $dist->prebuilt;
             my $dist_requirements = $dist->requirements(\@phase)->as_array;
-            my ($is_satisfied, @need_resolve) = $self->is_satisfied($dist_requirements);
-            if ($is_satisfied) {
+            my ($is_satisfied, $conflict_req, @need_resolve) = $self->is_satisfied($dist_requirements);
+            if ($conflict_req) {
+                $dist->deps_registered(1);
+                $self->{_fail_install}{$dist->distfile}++;
+            } elsif ($is_satisfied) {
                 $dist->registered(1);
                 $self->add_job(
                     type => "install",
@@ -266,7 +272,7 @@ sub _calculate_jobs {
                 my ($req) = grep { $_->{package} eq "perl" } @$dist_requirements;
                 my $msg = sprintf "%s requires perl %s, but you have only %s",
                     $dist->distvname, $req->{version_range}, $self->{target_perl} || $];
-                $self->{logger}->log($msg);
+                $self->{logger}->log_fail($msg);
                 App::cpm::Logger->log(result => "FAIL", message => $msg);
                 $self->{_fail_install}{$dist->distfile}++;
             }
@@ -287,6 +293,7 @@ sub _register_resolve_job {
 
         $self->add_job(
             type => "resolve",
+            reinstall => ($self->{reinstall}||0),
             package => $package->{package},
             version_range => $package->{version_range},
             ($package->{options} && $package->{options}->{git} ? (
@@ -322,6 +329,7 @@ sub is_installed {
         # we should treat it as not being installed
         return if !exists $Module::CoreList::version{$]}{$info->name};
     }
+    return($wantarray ? (0,0) : 0) if $self->{reinstall} && !$self->{_is_reinstalled}{$package}++;
     my $current_version = $self->{_is_installed}{$package}
                         = App::cpm::version->parse($info->version);
     my $ok = $current_version->satisfy($version_range);
@@ -364,6 +372,7 @@ sub is_core {
 sub is_satisfied {
     my ($self, $requirements) = @_;
     my $is_satisfied = 1;
+    my $is_conflict = 0;
     my @need_resolve;
     my @distributions = $self->distributions;
     for my $req (@$requirements) {
@@ -375,14 +384,28 @@ sub is_satisfied {
         next if $self->{target_perl} and $self->is_core($package, $version_range);
         next if $self->is_installed($package, $version_range, $req->{options}->{ref});
         my ($resolved) = grep { $_->providing($package, $version_range, $req->{options}->{ref}) } @distributions;
-        next if $resolved && $resolved->installed;
-
-        $is_satisfied = 0 if defined $is_satisfied;
-        if (!$resolved) {
+        if ($resolved) {
+            my $req_source = $req->{options}->{git}||'not a git repo';
+            if (($resolved->{source} ne 'git' && !exists $req->{options}->{git}) || $resolved->{uri} eq $req_source) {
+                if ($self->{reinstall}) {
+                    push @need_resolve, $req;
+                }
+                elsif ($resolved && $resolved->installed) {
+                    next;
+                }
+            }
+            else {
+                my $message = "Conflict source for package `$package`. Required $req_source, installed $resolved->{uri}";
+                $self->{logger}->log_fail($message);
+                $is_conflict = 1;
+            }
+        }
+        else {
             push @need_resolve, $req;
         }
+        $is_satisfied = 0 if defined $is_satisfied;
     }
-    return ($is_satisfied, @need_resolve);
+    return ($is_satisfied, $is_conflict, @need_resolve);
 }
 
 sub add_distribution {
@@ -407,7 +430,7 @@ sub _register_resolve_result {
     local $self->{logger}{context} = $job->{package};
     if ($job->{distfile} and $job->{distfile} =~ m{/perl-5[^/]+$}) {
         my $message = "Cannot upgrade core module $job->{package}.";
-        $self->{logger}->log($message);
+        $self->{logger}->log_fail($message);
         App::cpm::Logger->log(
             result => "FAIL",
             type => "install",

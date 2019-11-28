@@ -41,10 +41,13 @@ sub add {
                 }
             }
             $found->{version_range} = $merged;
+            my $found_git = $found->{options} && $found->{options}->{git} ? $found->{options}->{git} : '';
+            my $option_git = $options && $options->{git} ? $options->{git} : '';
+
             if ($options && $options->{ref} && $found->{options} && $found->{options}->{ref} ne $options->{ref}) {
                 $@ = "Coudn't merge ref '" . $found->{options}->{ref} . "' with '" . $options->{ref} . "' for package '$package'";
                 warn $@; #XXX
-                return; 
+                return;
             }
         } else {
             push @{$self->{requirement}}, { package => $package, version_range => $version_range, ($options ? (options => $options) : ()) };

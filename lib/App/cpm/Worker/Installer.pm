@@ -51,7 +51,7 @@ sub work {
                 distvname => $result->{distvname}, #n.shulyakovskiy
             };
         } else {
-            $self->{logger}->log("Failed to fetch/configure distribution");
+            $self->{logger}->log_fail("Failed to fetch/configure distribution");
         }
     } elsif ($type eq "configure") {
         # $job->{directory}, $job->{distfile}, $job->{meta});
@@ -63,12 +63,11 @@ sub work {
                 static_builder => $result->{static_builder},
             };
         } else {
-            $self->{logger}->log("Failed to configure distribution");
+            $self->{logger}->log_fail("Failed to configure distribution");
         }
     } elsif ($type eq "install") {
         my $ok = $self->install($job);
-        my $message = $ok ? "Successfully installed distribution" : "Failed to install distribution";
-        $self->{logger}->log($message);
+        my $message = $ok ? $self->{logger}->log("Successfully installed distribution") : $self->{logger}->log_fail("Failed to install distribution");
         return { ok => $ok, directory => $job->{directory} };
     } else {
         die "Unknown type: $type\n";
@@ -185,7 +184,9 @@ sub fetch {
             die "Error clone $uri: Empty dir" unless $tmp_dir;
             if ($long_rev ne $rev) {
                 unless (index($long_rev, $rev) == 0) {
-                    die "Revision mismatch";
+                    my $msg = "Revision mismatch $long_rev ne $rev";
+                    $self->{logger}->log_fail($msg);
+                    return;
                 }
                 $rev = $long_rev;
                 $cache_dir = $self->_git_cache_dir($uri, "$sd.$rev");
@@ -199,7 +200,7 @@ sub fetch {
         if ($subdir) {
             $cache_dir = File::Spec->catfile($cache_dir, $subdir);
             unless (-d $cache_dir) {
-                $self->{logger}->log("Directory $subdir not exists in git repository $uri (cache_dir: $cache_dir)");
+                $self->{logger}->log_warn("Directory $subdir not exists in git repository $uri (cache_dir: $cache_dir)");
                 $sd_exist = 0;
             }
         }
@@ -274,12 +275,12 @@ sub fetch {
 
     my $meta = $self->_load_metafile($distfile, 'META.json', 'META.yml');
     unless ($meta) {
-        $self->{logger}->log("Distribution does not have META.json nor META.yml");
+        $self->{logger}->log_warn("Distribution does not have META.json nor META.yml");
         if (!-f 'Build.PL' && !-f 'Makefile.PL') {
             if ($name && $version) {
                 $meta = CPAN::Meta->new({ name => $name, version => $version, x_static_install => 1 });
             } else {
-                $self->{logger}->log("No way to guess distribution META");
+                $self->{logger}->log_fail("No way to guess distribution META");
                 return;
             }
         }
@@ -336,7 +337,7 @@ sub find_prebuilt {
 
     my $meta = $self->_load_metafile($distfile, 'blib/meta/MYMETA.json', 'META.json', 'META.yml');
     unless ($meta && $self->menlo->no_dynamic_config($meta)) {
-        $self->{logger}->log("Prebuilt does not have MYMETA.json nor META.json nor META.yml");
+        $self->{logger}->log_warn("Prebuilt does not have MYMETA.json nor META.json nor META.yml");
         return;
     }
 
@@ -436,7 +437,7 @@ sub _load_metafile {
     my $meta;
     if (my ($file) = grep -f, @file) {
         $meta = eval { CPAN::Meta->load_file($file) };
-        $self->{logger}->log("Invalid $file: $@") if $@;
+        $self->{logger}->log_fail("Invalid $file: $@") if $@;
     }
 
     if (!$meta and $distfile) {
@@ -489,7 +490,7 @@ sub _retry {
     return 1 if $sub->();
     return unless $self->{retry};
     Time::HiRes::sleep(0.1);
-    $self->{logger}->log("! Retrying (you can turn off this behavior by --no-retry)");
+    $self->{logger}->log_warn("! Retrying (you can turn off this behavior by --no-retry)");
     return $sub->();
 }
 

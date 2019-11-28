@@ -27,17 +27,19 @@ sub resolve {
     if ($job->{ref}) {
         ($rev, $version) = $self->fetch_rev($job->{uri}, $job->{ref});
     } else {
-        my @tags;
+        my %tags;
         my ($uri) = App::cpm::Git->split_uri($job->{uri});
-        my $out = `git ls-remote --tags --refs $uri "*.*"`;
-        while ($out =~ /^(\p{IsXDigit}{40})\s+refs\/tags\/(.+)$/mg) {
-            my ($r, $v) = ($1, $2);
-            push @tags, {
-                version => App::cpm::version->parse($v),
-                rev     => $r,
-            };
+        my $out = `git ls-remote --tags $uri "*.*"`;
+        while ($out =~ /^(\p{IsXDigit}{40})\s+refs\/tags\/(.+?)(\^\{\})?$/mg) {
+            my ($r, $v, $o) = ($1, $2, $3);
+            $tags{$v} = $r if !$tags{$v} || $o;
         }
-        if (@tags) {
+        if (%tags) {
+            use version;
+            my @tags = map +{
+                version => App::cpm::version->parse($_),
+                rev     => $tags{$_},
+            }, grep {version::is_lax($_)} keys %tags;
             foreach my $tag (sort { $b->{version} <=> $a->{version} } @tags) {
                 if ($tag->{version}->satisfy($job->{version_range})) {
                     $version = $tag->{version}->stringify;
@@ -49,7 +51,7 @@ sub resolve {
             ($rev) = `git ls-remote $uri HEAD` =~ /^(\p{IsXDigit}+)\s/;
         }
     }
-    return { error => 'repo or ref (`' . ($job->{ref}||'master') . '`) not found' } unless $rev;
+    return { stop => 1, error => 'repo (`' . $job->{uri} . '`) or ref (`' . ($job->{ref}||'master') . '`) not found' } unless $rev;
 
     return {
         source => 'git',

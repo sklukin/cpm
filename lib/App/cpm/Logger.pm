@@ -26,6 +26,12 @@ sub new {
     bless {@_}, $class;
 }
 
+for my $m (qw/fail warn/) {
+    my $method = 'log_' . $m;
+    no strict 'refs';
+    *$method = sub {shift->log(result => uc($m), @_)};
+}
+
 sub log {
     my ($self, %option) = @_;
     my $type = $option{type} || "";

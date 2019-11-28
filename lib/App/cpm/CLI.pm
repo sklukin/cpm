@@ -237,6 +237,7 @@ sub cmd_install {
         search_inc => $self->_search_inc,
         global => $self->{global},
         show_progress => $self->{show_progress},
+        reinstall => $self->{reinstall},
         (exists $self->{target_perl} ? (target_perl => $self->{target_perl}) : ()),
     );
 
@@ -271,7 +272,7 @@ sub cmd_install {
                 splice @$packages, $i, 1;
             }
         }
-        my ($is_satisfied, @need_resolve) = $master->is_satisfied($requirement->as_array);
+        my ($is_satisfied, $conflict_req, @need_resolve) = $master->is_satisfied($requirement->as_array);
         last if $is_satisfied;
         $master->add_job(type => "resolve", %$_) for @need_resolve;
 
@@ -381,7 +382,7 @@ sub initial_job {
     if (!@{$self->{argv}}) {
         my ($requirement, $reinstall);
         ($requirement, $reinstall, $resolver) = $self->load_cpanfile($self->{cpanfile});
-        my ($is_satisfied, @need_resolve) = $master->is_satisfied($requirement);
+        my ($is_satisfied, $conflict_req, @need_resolve) = $master->is_satisfied($requirement);
         if (!@$reinstall and $is_satisfied) {
             warn "All requirements are satisfied.\n";
             return;

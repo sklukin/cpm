@@ -322,14 +322,16 @@ sub is_installed {
     my $info = Module::Metadata->new_from_module($package, inc => $self->{search_inc});
     return unless $info;
 
+    my $is_core_inc = 0;
     if (!$self->{global} and $self->{_has_corelist} and $self->_in_core_inc($info->filename)) {
         # https://github.com/miyagawa/cpanminus/blob/7b574ede70cebce3709743ec1727f90d745e8580/Menlo-Legacy/lib/Menlo/CLI/Compat.pm#L1783-L1786
         # if found package in core inc,
         # but it does not list in CoreList,
         # we should treat it as not being installed
         return if !exists $Module::CoreList::version{$]}{$info->name};
+        $is_core_inc = 1;
     }
-    return($wantarray ? (0,0) : 0) if $self->{reinstall} && !$self->{_is_reinstalled}{$package}++;
+    return($wantarray ? (0,0) : 0) if $self->{reinstall} && !$is_core_inc && !$self->{_is_reinstalled}{$package}++;
     my $current_version = $self->{_is_installed}{$package}
                         = App::cpm::version->parse($info->version);
     my $ok = $current_version->satisfy($version_range);
@@ -390,7 +392,7 @@ sub is_satisfied {
                 if ($self->{reinstall}) {
                     push @need_resolve, $req;
                 }
-                elsif ($resolved && $resolved->installed) {
+                elsif ($resolved->installed) {
                     next;
                 }
             }

@@ -384,12 +384,12 @@ sub is_satisfied {
             next;
         }
         next if $self->{target_perl} and $self->is_core($package, $version_range);
-        next if $self->is_installed($package, $version_range, $req->{options}->{ref});
         my ($resolved) = grep { $_->providing($package, $version_range, $req->{options}->{ref}) } @distributions;
         if ($resolved) {
             my $req_source = $req->{options}->{git}||'not a git repo';
             if (($resolved->{source} ne 'git' && !exists $req->{options}->{git}) || $resolved->{uri} eq $req_source) {
                 if ($self->{reinstall}) {
+                    next if $self->is_installed($package, $version_range, $req->{options}->{ref});
                     push @need_resolve, $req;
                 }
                 elsif ($resolved->installed) {
@@ -403,6 +403,7 @@ sub is_satisfied {
             }
         }
         else {
+            next if $self->is_installed($package, $version_range, $req->{options}->{ref});
             push @need_resolve, $req;
         }
         $is_satisfied = 0 if defined $is_satisfied;

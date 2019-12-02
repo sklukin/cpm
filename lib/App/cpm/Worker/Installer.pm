@@ -349,8 +349,8 @@ sub find_prebuilt {
         # But requires them for consistency for now.
         %req = ( configure => $self->_extract_configure_requirements($meta, $distfile) );
     }
-    if (my $prereqs_source = (-f 'cpanfile' && Module::CPANfile->load('cpanfile')) || $meta) {
-        %req = (%req, %{$self->_extract_configure_requirements($prereqs_source, $phase)} );
+    if (-f 'cpanfile' || $meta) {
+        %req = (%req, %{$self->_extract_requirements([(-f 'cpanfile' ? 'cpanfile' : ()), $meta], $phase)} );
     }
     else {
         die "Can't found meta or cpanfile";

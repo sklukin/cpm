@@ -333,18 +333,21 @@ sub is_installed {
     }
     if ($info) {
         my $reinstall_distrib = $package;
-        for my $distr (grep {$_->configured} $self->distributions) {
+        for my $distr (grep {$_->configured || $_->installed} $self->distributions) {
             for (@{$distr->provides}) {
                 if ($_->{package} eq $package) {
-                    $reinstall_distrib = $distr->meta->{name};
+                    $reinstall_distrib = $distr->distdata ? $distr->distdata->{module_name} : $distr->meta->{name};
+                    $reinstall_distrib =~ s/-/::/g;
                     last;
                 }
             }
         }
-        return($wantarray ? (0,0) : 0) if $self->{reinstall} && !$is_core_inc && (!$self->{_is_reinstalled}{$reinstall_distrib}++ && !$self->{_is_reinstalled}{$package}++ );
+
+        return($wantarray ? (0,0) : 0) if $self->{reinstall} && !$is_core_inc && (!$self->{_is_reinstalled}{$reinstall_distrib}++ && ($reinstall_distrib eq $package || !$self->{_is_reinstalled}{$package}++));
     }
     elsif ($self->{reinstall}) {
         $self->{_is_reinstalled}{$package}++;
+#        return ($wantarray ? (0,0) : 0);
     }
     my $current_version = $self->{_is_installed}{$package}
                         = App::cpm::version->parse($info->version);
@@ -352,7 +355,7 @@ sub is_installed {
     return $ok if !$wantarray && (!$rev || !$ok);
     my $current_rev = App::cpm::Git->module_rev($info->filename);
     $ok &&= App::cpm::Git->rev_is($rev, $current_rev) if $rev;
-    $wantarray ? ($ok, $current_version, $current_rev) : $ok;
+    return $wantarray ? ($ok, $current_version, $current_rev) : $ok;
 }
 
 sub _in_core_inc {

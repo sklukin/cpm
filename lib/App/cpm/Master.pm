@@ -331,7 +331,21 @@ sub is_installed {
         return if !exists $Module::CoreList::version{$]}{$info->name};
         $is_core_inc = 1;
     }
-    return($wantarray ? (0,0) : 0) if $self->{reinstall} && !$is_core_inc && !$self->{_is_reinstalled}{$package}++;
+    if ($info) {
+        my $reinstall_distrib = $package;
+        for my $distr (grep {$_->configured} $self->distributions) {
+            for (@{$distr->provides}) {
+                if ($_->{package} eq $package) {
+                    $reinstall_distrib = $distr->meta->{name};
+                    last;
+                }
+            }
+        }
+        return($wantarray ? (0,0) : 0) if $self->{reinstall} && !$is_core_inc && (!$self->{_is_reinstalled}{$reinstall_distrib}++ && !$self->{_is_reinstalled}{$package}++ );
+    }
+    elsif ($self->{reinstall}) {
+        $self->{_is_reinstalled}{$package}++;
+    }
     my $current_version = $self->{_is_installed}{$package}
                         = App::cpm::version->parse($info->version);
     my $ok = $current_version->satisfy($version_range);

@@ -292,9 +292,7 @@ sub fetch {
         if ($meta && $self->menlo->opts_in_static_install($meta)) {
             $self->{logger}->log("Distribution opts in x_static_install: $meta->{x_static_install}");
         } else {
-            my $cpanfile = -f 'cpanfile' ? 'cpanfile' : undef; 
-            my $meta_files = [grep {$_} $cpanfile, $meta];
-            $req = { configure => $self->_extract_configure_requirements($meta_files, $distfile) } if @$meta_files;
+            $req = { configure => $self->_extract_configure_requirements($meta, $distfile) } if -f 'cpanfile' || $meta;
         }
     };
     die "Error load requirments for $dir: $@" if $@;
@@ -349,12 +347,7 @@ sub find_prebuilt {
         # But requires them for consistency for now.
         %req = ( configure => $self->_extract_configure_requirements($meta, $distfile) );
     }
-    if (-f 'cpanfile' || $meta) {
-        %req = (%req, %{$self->_extract_requirements([(-f 'cpanfile' ? 'cpanfile' : ()), $meta], $phase)} );
-    }
-    else {
-        die "Can't found meta or cpanfile";
-    }
+    %req = (%req, %{$self->_extract_requirements($meta, $phase)} );
 
     my $json = do {
         open my $fh, "<", 'blib/meta/install.json' or die;
@@ -462,16 +455,12 @@ sub _extract_configure_requirements {
 }
 
 sub _extract_requirements {
-    my ($self, $meta_and_cpanfile, $phases) = @_;
+    my ($self, $meta, $phases) = @_;
     $phases = [$phases] unless ref $phases;
-    die "Empty metadata" if !$meta_and_cpanfile || (ref $meta_and_cpanfile eq 'ARRAY' && !@$meta_and_cpanfile);
-    $meta_and_cpanfile = [$meta_and_cpanfile] unless ref $meta_and_cpanfile eq 'ARRAY';
+    die "Empty metadata" if !$meta && !-f 'cpanfile';
     my %req;
-    for my $meta_or_cpanfile (@$meta_and_cpanfile) {
-        unless (ref $meta_or_cpanfile) {
-            require Module::CPANfile;
-            $meta_or_cpanfile = Module::CPANfile->load($meta_or_cpanfile);
-        }
+    require Module::CPANfile;
+    for my $meta_or_cpanfile ((-f 'cpanfile' ? Module::CPANfile->load('cpanfile'): ()), ($meta ? $meta : ())) {
         my $can_get_options = $meta_or_cpanfile->can('options_for_module') ? 1 : 0;
         my $hash = $meta_or_cpanfile->effective_prereqs->as_string_hash;
         for my $phase (@$phases) {
@@ -536,7 +525,7 @@ sub configure {
     my $dd_distfile = $source eq 'git' ? "$job->{uri}\@$job->{rev}" : $distfile;
     my $mymeta = $self->_load_metafile($distfile, 'MYMETA.json', 'MYMETA.yml');
     my $distdata = $self->_build_distdata($source, $dd_distfile, $mymeta);
-    my $req = $self->_extract_requirements([(-f 'cpanfile' ? 'cpanfile' : ()), $mymeta], $phase);
+    my $req = $self->_extract_requirements($mymeta, $phase);
 
     return +{
         distdata => $distdata,

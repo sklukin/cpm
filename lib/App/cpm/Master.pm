@@ -363,7 +363,7 @@ sub _in_core_inc {
 
 sub is_core {
     my ($self, $package, $version_range) = @_;
-    my $target_perl = $self->{target_perl};
+    my $target_perl = $self->{target_perl} || $];
     if (exists $Module::CoreList::version{$target_perl}{$package}) {
         if (!exists $Module::CoreList::version{$]}{$package}) {
             if (!$self->{_removed_core}{$package}++) {
@@ -398,7 +398,7 @@ sub is_satisfied {
             $is_satisfied = undef if !$self->is_satisfied_perl_version($version_range);
             next;
         }
-        next if $self->{target_perl} and $self->is_core($package, $version_range);
+        next if $self->is_core($package, $version_range);
         my ($resolved) = grep { $_->providing($package, $version_range, $req->{options}->{ref}) } @distributions;
         if ($resolved) {
             my $req_source = $req->{options}->{git}||'not a git repo';

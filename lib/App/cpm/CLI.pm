@@ -392,9 +392,6 @@ sub initial_job {
                 $self->{cpanfile}, $req->{version_range}, $self->{target_perl} || $];
         }
         push @package, @need_resolve, @$reinstall;
-        if ($self->{reinstall}) {
-            $_->{reinstall} = 1 for @package;
-        }
         return (\@package, \@dist, $resolver);
     }
 
@@ -481,7 +478,7 @@ sub load_cpanfile {
             version_range => $reqs->{$package},
             dev => $option->{dev},
         };
-        if (($option->{git} && $option->{ref} && $option->{ref} !~ /^[0-9a-f]+$/) || ($package ne 'perl' && $self->{reinstall})) {
+        if (($option->{git} && $option->{ref} && $option->{ref} !~ /^[0-9a-f]+$/)) {
             $req->{options} = {git => $option->{git}, ($option->{ref} ? (ref => $option->{ref}) : ())} if $option->{git};
             push @reinstall, $req;
         } else {

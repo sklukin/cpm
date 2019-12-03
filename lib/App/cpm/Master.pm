@@ -320,7 +320,10 @@ sub is_installed {
         }
     }
     my $info = Module::Metadata->new_from_module($package, inc => $self->{search_inc});
-    return unless $info;
+    unless ($info) {
+        $self->{_is_reinstalled}{$package}++ if $self->{reinstall};
+        return;
+    }
 
     my $is_core_inc = 0;
     if (!$self->{global} and $self->{_has_corelist} and $self->_in_core_inc($info->filename)) {
@@ -331,24 +334,19 @@ sub is_installed {
         return if !exists $Module::CoreList::version{$]}{$info->name};
         $is_core_inc = 1;
     }
-    if ($info) {
+    if ($self->{reinstall} && $info) {
         my $reinstall_distrib = $package;
         for my $distr (grep {$_->configured || $_->installed} $self->distributions) {
             for (@{$distr->provides}) {
                 if ($_->{package} eq $package) {
                     $reinstall_distrib = $distr->distdata ? $distr->distdata->{module_name} : $distr->meta->{name};
-                    $reinstall_distrib =~ s/-/::/g;
                     last;
                 }
             }
         }
+        return($wantarray ? (0,0) : 0) if !$is_core_inc && !($self->{_is_reinstalled}{$package}++ || ($reinstall_distrib ne $package && $self->{_is_reinstalled}{$reinstall_distrib}++));
+    }
 
-        return($wantarray ? (0,0) : 0) if $self->{reinstall} && !$is_core_inc && (!$self->{_is_reinstalled}{$reinstall_distrib}++ && ($reinstall_distrib eq $package || !$self->{_is_reinstalled}{$package}++));
-    }
-    elsif ($self->{reinstall}) {
-        $self->{_is_reinstalled}{$package}++;
-#        return ($wantarray ? (0,0) : 0);
-    }
     my $current_version = $self->{_is_installed}{$package}
                         = App::cpm::version->parse($info->version);
     my $ok = $current_version->satisfy($version_range);

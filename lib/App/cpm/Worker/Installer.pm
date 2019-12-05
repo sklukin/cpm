@@ -291,8 +291,8 @@ sub fetch {
     eval {
         if ($meta && $self->menlo->opts_in_static_install($meta)) {
             $self->{logger}->log("Distribution opts in x_static_install: $meta->{x_static_install}");
-        } else {
-            $req = { configure => $self->_extract_configure_requirements($meta, $distfile) } if -f 'cpanfile' || $meta;
+        } elsif(-f 'cpanfile' || $meta) {
+            $req = { configure => $self->_extract_configure_requirements($meta, $distfile) };
         }
     };
     die "Error load requirments for $dir: $@" if $@;

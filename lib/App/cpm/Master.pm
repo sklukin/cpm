@@ -350,6 +350,7 @@ sub is_installed {
     my $current_version = $self->{_is_installed}{$package}
                         = App::cpm::version->parse($info->version);
     my $ok = $current_version->satisfy($version_range);
+#warn "Is installed $package $ok";
     return $ok if !$wantarray && (!$rev || !$ok);
     my $current_rev = App::cpm::Git->module_rev($info->filename);
     $ok &&= App::cpm::Git->rev_is($rev, $current_rev) if $rev;
@@ -398,7 +399,7 @@ sub is_satisfied {
             $is_satisfied = undef if !$self->is_satisfied_perl_version($version_range);
             next;
         }
-        next if $self->is_core($package, $version_range);
+        next if $self->{target_perl} && $self->is_core($package, $version_range);
         my ($resolved) = grep { $_->providing($package, $version_range, $req->{options}->{ref}) } @distributions;
         if ($resolved) {
             my $req_source = $req->{options}->{git}||'not a git repo';

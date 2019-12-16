@@ -350,7 +350,6 @@ sub is_installed {
     my $current_version = $self->{_is_installed}{$package}
                         = App::cpm::version->parse($info->version);
     my $ok = $current_version->satisfy($version_range);
-#warn "Is installed $package $ok";
     return $ok if !$wantarray && (!$rev || !$ok);
     my $current_rev = App::cpm::Git->module_rev($info->filename);
     $ok &&= App::cpm::Git->rev_is($rev, $current_rev) if $rev;
@@ -364,7 +363,7 @@ sub _in_core_inc {
 
 sub is_core {
     my ($self, $package, $version_range) = @_;
-    my $target_perl = $self->{target_perl} || $];
+    my $target_perl = $self->{target_perl};
     if (exists $Module::CoreList::version{$target_perl}{$package}) {
         if (!exists $Module::CoreList::version{$]}{$package}) {
             if (!$self->{_removed_core}{$package}++) {

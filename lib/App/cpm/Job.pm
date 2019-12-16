@@ -31,7 +31,7 @@ sub distfile {
 
 sub distvname {
     my $self = shift;
-    return $self->{distvname} if $self->{distvname};
+    return $self->{_distvname} if $self->{_distvname};
     if ($self->{distfile}) {
         $self->{_distvname} ||= CPAN::DistnameInfo->new($self->{distfile})->distvname;
     } elsif ($self->{uri}) {

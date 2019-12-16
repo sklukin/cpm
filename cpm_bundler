@@ -1,0 +1,119 @@
+#!/usr/bin/env perl
+use 5.28.2;
+use strict;
+use FindBin;
+use Config;
+use File::Path qw/remove_tree make_path/;
+use CPAN::Meta::Requirements;
+use Getopt::Long ();
+use Cwd;
+
+my $bin_cpm = '/usr/bin/cpm';
+my $build_dir = "build/";
+
+Getopt::Long::GetOptions(
+    "f|force" => \my $force,
+    "t|restore" => \my $restore,
+    "update=s" => \my $update,
+    "install=s" => \my $install,
+    "rebuild" => \my $rebuild,
+    "config=s" => \my $config_yaml,
+    "cpm_path=s" => \my $path_cpm,
+    "dev_cpm" => \my $dev_cpm,
+    "build_dir=s" => \$build_dir,
+) or exit 1;
+
+die "Config file `$config_yaml` does not exists" if $config_yaml && !-f $config_yaml;
+$config_yaml ||= ".cpm_builder.yaml";
+if (-f $config_yaml) {
+    my ($yaml_cfg) = YAML::LoadFile($config_yaml);
+    $ENV{$_} = $yaml_cfg->{ENV}->{$_} for keys %{$yaml_cfg->{ENV}};
+}
+
+$bin_cpm = $path_cpm . '/cpm' if $path_cpm;
+die "dev_cpm required cpm_path option" if $dev_cpm && ! $path_cpm;
+die "cpm `$bin_cpm` not found" unless -f $bin_cpm;
+
+my $lib_cpm = [$build_dir . '/local/lib/perl5'];
+eval "use lib '$build_dir/local/lib/perl5';";
+if ($dev_cpm && $path_cpm) {
+    push @$lib_cpm, ($path_cpm . '../../lib', $path_cpm . '../../local/lib/perl5');
+}
+
+make_path($build_dir) unless -d $build_dir;
+unless (-f $build_dir . '/cpanfile') {
+    open(my $cpanfile, '>', $build_dir . '/cpanfile') or die "Can't create cpanfile for builder: $!";
+    print {$cpanfile} <<CPANFILE;
+on develop => sub {
+    requires 'IO::Uncompress::Gunzip', '0';
+    requires 'Carton', '1.0.34_1', git => 'https://github.com/Nikolo/carton.git'; #https://github.com/perl-carton/carton/pull/263
+    requires 'CPAN::Mirror::Tiny', '0.20';
+    requires 'Capture::Tiny';
+    requires 'Path::Tiny';
+    requires 'Test::More', '0.98';
+    requires 'Archive::Tar';
+    requires 'Archive::Zip', '!= 1.66';
+    requires 'JSON::XS', '0';
+};
+CPANFILE
+    close($cpanfile);
+}
+
+sub cpm {
+    my $prefix = shift;
+    my $cmd = join(" ", $ENV{_}, join(" ", map {"-I $_"} @$lib_cpm), $bin_cpm, join (' ', @_));
+    warn "\e[1;31m$prefix\e[m " . $cmd . "\n";
+    return system($cmd);
+}
+
+sub gen_snapshot {
+    warn "\e[1;31mGenerate snapshot\e[m\n";
+    require 'Carton/Snapshot.pm';
+    my $snapshot = Carton::Snapshot->new(path => "cpanfile.snapshot");
+    my $no_exclude = CPAN::Meta::Requirements->new;
+    $snapshot->find_installs("local", $no_exclude);
+    $snapshot->save;
+}
+
+my @params = ("install");
+
+my $resolver = '';
+
+if ($restore) {
+    die "Unexists cpanfile.snapshot" unless -f "cpanfile.snapshot";
+    remove_tree 'local';
+    push @params, ("--resolver", 'snapshot')
+}
+
+if ($force) {
+    unlink 'cpanfile.snapshot' if -f 'cpanfile.snapshot';
+    push @params, "--reinstall";
+}
+
+if ($rebuild){
+    warn "Clean local";
+    push @params, "--no-prebuilt";
+}
+
+my $dir = getcwd;
+
+chdir $build_dir;
+die "cpm return code not 0" if cpm "Build devel package", "install", "--with-develop";
+chdir $dir;
+if ($update or $install) {
+    if ($update) {
+        #remove_tree 'local';
+        #die "cpm return code not 0" if cpm "Build project", 'install', "--resolver", 'snapshot';
+    }
+    die "cpm return code not 0" if cpm "Build project", 'install', split(',', $update) , split(',', $install);
+    gen_snapshot;
+    if ($update) {
+        remove_tree 'local';
+        die "cpm return code not 0" if cpm "Build project", 'install', "--resolver", 'snapshot';
+    }
+} else {
+    remove_tree 'local' if $restore;
+    die "cpm return code not 0" if cpm "Build project", @params;
+    gen_snapshot unless $restore;
+}
+

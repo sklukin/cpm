@@ -514,7 +514,6 @@ sub generate_resolver {
                     $mirror = $self->{mirror};
                 }
                 $resolver = App::cpm::Resolver::MetaDB->new(
-                    #mirror => @arg ? $self->normalize_mirror($arg[0]) : $self->{mirror}
                     $uri ? (uri => $uri) : (),
                     mirror => $self->normalize_mirror($mirror),
                 );

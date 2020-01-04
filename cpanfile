@@ -31,4 +31,3 @@ on develop => sub {
     requires 'Archive::Tar';
     requires 'Archive::Zip', '!= 1.66';
 };
-

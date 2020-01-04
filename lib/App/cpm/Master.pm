@@ -507,7 +507,7 @@ sub _register_fetch_result {
     if ($job->{source} eq 'git') {
         $distribution->rev($job->{rev});
         $distribution->version($job->{version});
-        $distribution->distvname($job->{distvname}) if $job->{distvname};
+        $distribution->distvname($job->{meta}->{name} . "-" . $job->{meta}->{version}) if $job->{meta}->{name};
     }
 
     if ($job->{prebuilt}) {
@@ -537,7 +537,7 @@ sub _register_configure_result {
     $distribution->distdata($job->{distdata});
 
     if ($distribution->source eq 'git') {
-        $distribution->distvname($job->{distdata}{distvname});
+        $distribution->distvname($job->{distdata}->{distvname});
     }
 
     # After configuring, the final "provides" is fixed.

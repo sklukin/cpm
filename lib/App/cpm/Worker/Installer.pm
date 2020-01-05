@@ -295,12 +295,8 @@ sub fetch {
         }
     };
     die "Error load requirments for $dir: $@" if $@;
-    unless ($meta) {
-        $self->{logger}->log_warn("Distribution does not have META and MYMETA");
-        return;
-    }
 
-    my $p = $meta->{provides} || $self->menlo->extract_packages($meta, ".");
+    my $p = $meta ? ($meta->{provides} || $self->menlo->extract_packages($meta, ".")) : {};
     my $provides = [ map +{ package => $_, version => $p->{$_}{version}, ($job->{ref} ? (ref => $job->{ref}):()) }, sort keys %$p ];
 
     return +{

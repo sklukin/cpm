@@ -478,8 +478,13 @@ sub load_cpanfile {
             version_range => $reqs->{$package},
             dev => $option->{dev},
         };
+        if($option->{git}) {
+            $req->{options}->{git} = $option->{git};
+            $req->{options}->{ref} = $option->{ref} if $option->{ref};
+        }
+        $req->{options}->{features} = $option->{features} if $option->{features};
+
         if ($self->{reinstall} || ($option->{git} && $option->{ref} && $option->{ref} !~ /^[0-9a-f]+$/)) {
-            $req->{options} = {git => $option->{git}, ($option->{ref} ? (ref => $option->{ref}) : ())} if $option->{git};
             push @reinstall, $req;
         } else {
             push @package, $req;
@@ -490,6 +495,7 @@ sub load_cpanfile {
     my $resolver = App::cpm::Resolver::CPANfile->new(
         cpanfile => $cpanfile,
         mirror => $self->{mirror},
+        features => $self->{feature},
     );
 
     (\@package, \@reinstall, $resolver);

@@ -190,6 +190,7 @@ sub _calculate_jobs {
                 uri => $dist->uri,
                 rev => $dist->rev,
                 ref => $dist->ref,
+                features => $dist->{features},
             );
         }
     }
@@ -215,6 +216,7 @@ sub _calculate_jobs {
                     ref => $dist->ref,
                     version => $dist->version,
                     distvname => $dist->distvname,
+                    features => $dist->{features},
                 );
             } elsif (@need_resolve and !$dist->deps_registered) {
                 $dist->deps_registered(1);
@@ -260,6 +262,7 @@ sub _calculate_jobs {
                     ref => $dist->ref,
                     static_builder => $dist->static_builder,
                     prebuilt => $dist->prebuilt,
+                    features => $dist->{features},
                 );
             } elsif (@need_resolve and !$dist->deps_registered) {
                 $dist->deps_registered(1);
@@ -296,6 +299,9 @@ sub _register_resolve_job {
             reinstall => ($self->{reinstall}||0),
             package => $package->{package},
             version_range => $package->{version_range},
+            ($package->{options} && $package->{options}->{features} ? (
+                features => $package->{options}->{features},
+            ) : ()),
             ($package->{options} && $package->{options}->{git} ? (
                 source => 'git',
                 uri => $package->{options}->{git},
@@ -482,7 +488,8 @@ sub _register_resolve_result {
         my $version = App::cpm::version->parse($job->{version}) || 0;
         $provides = [{package => $job->{package}, version => $version, ($job->{ref} ? (ref => $job->{ref}) : ())}];
     }
-    $_->{ref} ||= $job->{ref} for @{$provides}; 
+    $_->{ref} ||= $job->{ref} for @{$provides};
+
     my $distribution = App::cpm::Distribution->new(
         source   => $job->{source},
         uri      => $job->{uri},
@@ -490,6 +497,7 @@ sub _register_resolve_result {
         distfile => $job->{distfile},
         rev      => $job->{rev},
         ref      => $job->{ref},
+        features => $job->{options}->{features},
     );
     $self->add_distribution($distribution);
 }

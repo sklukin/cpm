@@ -158,9 +158,10 @@ sub fetch {
     my $distfile = $job->{distfile};
     my $rev      = $job->{rev};
     my $uri      = $job->{uri};
+    my $features = $job->{features};
 
     if ($self->enable_prebuilt($source, $uri)) {
-        if (my $result = $self->find_prebuilt($source, $uri, $rev)) {
+        if (my $result = $self->find_prebuilt($source, $uri, $rev, $features)) {
             $result->{ref} = $job->{ref} if $job->{ref};
             $self->{logger}->log("Using prebuilt $result->{directory}");
             return $result;
@@ -291,7 +292,7 @@ sub fetch {
         if ($meta && $self->menlo->opts_in_static_install($meta)) {
             $self->{logger}->log("Distribution opts in x_static_install: $meta->{x_static_install}");
         } elsif(-f 'cpanfile' || $meta) {
-            $req = { configure => $self->_extract_configure_requirements($meta, $distfile) };
+            $req = { configure => $self->_extract_configure_requirements($meta, $distfile, $features) };
         }
     };
     die "Error load requirments for $dir: $@" if $@;
@@ -306,16 +307,16 @@ sub fetch {
         provides => $provides,
         using_cache => $using_cache,
         rev => $rev,
-        ($job->{ref} ? (ref => $job->{ref}) : ()), 
+        ($job->{ref} ? (ref => $job->{ref}) : ()),
         version => $version,
     };
 }
 
 sub find_prebuilt {
-    my ($self, $source, $uri, $rev) = @_;
+    my ($self, $source, $uri, $rev, $features) = @_;
     my ($dir, $distfile);
     if ($source eq 'git') {
-        my $dirname = "$uri-$rev";
+        my $dirname = join "-", $uri, $rev, $features ? @$features : ();
         $dirname =~ s/[^a-zA-Z0-9_.-]/-/g;
         $dir = File::Spec->catdir($self->{prebuilt_base}, 'git', $dirname);
         unless (length $rev == 40) {
@@ -344,7 +345,7 @@ sub find_prebuilt {
     if (!$self->menlo->opts_in_static_install($meta)) {
         # XXX Actually we don't need configure requirements for prebuilt.
         # But requires them for consistency for now.
-        %req = ( configure => $self->_extract_configure_requirements($meta, $distfile) );
+        %req = ( configure => $self->_extract_configure_requirements($meta, $distfile, $features) );
     }
     %req = (%req, %{$self->_extract_requirements($meta, $phase)} );
 
@@ -370,7 +371,7 @@ sub save_prebuilt {
     my ($self, $job) = @_;
     my $dir;
     if ($job->{distdata}->{source} eq 'git') {
-        my $dirname = $job->{distdata}->{pathname};
+        my $dirname = join "-", $job->{distdata}->{pathname}, $job->{features} ? @{$job->{features}} : ();
         $dirname =~ s/[^a-zA-Z0-9_.-]/-/g;
         $dir = File::Spec->catdir($self->{prebuilt_base}, 'git', $dirname);
     } else {
@@ -442,8 +443,8 @@ sub _load_metafile {
 # XXX Assume current directory is distribution directory
 # because the test "-f Build.PL" or similar is present
 sub _extract_configure_requirements {
-    my ($self, $meta, $distfile) = @_;
-    my $requirement = $self->_extract_requirements($meta, [qw(configure)])->{configure};
+    my ($self, $meta, $distfile, $features) = @_;
+    my $requirement = $self->_extract_requirements($meta, [qw(configure)], $features)->{configure};
     if ($requirement->empty and -f "Build.PL" and ($distfile || "") !~ m{/Module-Build-[0-9v]}) {
         $requirement->add("Module::Build" => "0.38");
     }
@@ -454,14 +455,16 @@ sub _extract_configure_requirements {
 }
 
 sub _extract_requirements {
-    my ($self, $meta, $phases) = @_;
+    my ($self, $meta, $phases, $features) = @_;
     $phases = [$phases] unless ref $phases;
     die "Empty metadata" if !$meta && !-f 'cpanfile';
     my %req;
     require Module::CPANfile;
+    my %known_features;
     for my $meta_or_cpanfile ((-f 'cpanfile' ? Module::CPANfile->load('cpanfile'): ()), ($meta ? $meta : ())) {
         my $can_get_options = $meta_or_cpanfile->can('options_for_module') ? 1 : 0;
-        my $hash = $meta_or_cpanfile->effective_prereqs->as_string_hash;
+        $known_features{$_->identifier} = $can_get_options for $meta_or_cpanfile->features;
+        my $hash = $meta_or_cpanfile->effective_prereqs([ grep { exists $known_features{$_} && $known_features{$_} == $can_get_options} @$features ])->as_string_hash;
         for my $phase (@$phases) {
             $req{$phase} ||= App::cpm::Requirement->new;
             my $from = ($hash->{$phase} || +{})->{requires} || +{};
@@ -470,6 +473,8 @@ sub _extract_requirements {
             }
         }
     }
+    my @unknown_features = grep { !exists $known_features{$_} } @$features;
+    die "Unknown features ".join(", ", map { "'$_'" } @unknown_features) if @unknown_features;
     \%req;
 }
 
@@ -484,7 +489,7 @@ sub _retry {
 
 sub configure {
     my ($self, $job) = @_;
-    my ($dir, $distfile, $meta, $source) = @{$job}{qw(directory distfile meta source)};
+    my ($dir, $distfile, $meta, $source, $features) = @{$job}{qw(directory distfile meta source features)};
     my $guard = pushd $dir;
     my $menlo = $self->menlo;
     my $menlo_dist = { meta => $meta, cpanmeta => $meta }; # XXX
@@ -524,7 +529,7 @@ sub configure {
     my $dd_distfile = $source eq 'git' ? "$job->{uri}\@$job->{rev}" : $distfile;
     my $mymeta = $self->_load_metafile($distfile, 'MYMETA.json', 'MYMETA.yml');
     my $distdata = $self->_build_distdata($source, $dd_distfile, $mymeta);
-    my $req = $self->_extract_requirements($mymeta, $phase);
+    my $req = $self->_extract_requirements($mymeta, $phase, $features);
 
     return +{
         distdata => $distdata,

@@ -2,6 +2,18 @@ Revision history for App-cpm
 
 {{$NEXT}}
 
+0.993  2020-05-13 19:35:28 JST
+        - Now cpm exits successfully for empty list via pipe (abraxxa #165)
+
+0.992  2020-05-09 01:28:57 JST
+        - Fatpack ExtUtils-PL2Bat (atoomic #173)
+
+0.991  2020-04-12 12:59:53 JST
+        - [EXPERIMANTAL] Allow users to specify arbitrary resolvers (#168)
+
+0.990  2020-03-27 09:49:10 JST
+        - Add --with-all to install all listed deps in a cpanfile (atoomic #166)
+
 0.989  2019-11-08 07:34:11 JST
         - Support custom metadb resolver (Sadrak #159)
 

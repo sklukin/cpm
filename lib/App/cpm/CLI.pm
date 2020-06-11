@@ -68,6 +68,9 @@ sub parse_options {
         my $n = shift;
         ("with-$n", \$self->{"with_$n"}, "without-$n", sub { $self->{"with_$n"} = 0 });
     };
+    my @type  = qw(requires recommends suggests);
+    my @phase = qw(configure build test runtime develop);
+
     GetOptions
         "L|local-lib-contained=s" => \($self->{local_lib}),
         "color!" => \($self->{color}),
@@ -95,11 +98,12 @@ sub parse_options {
         "reinstall" => \($self->{reinstall}),
         "pp|pureperl|pureperl-only" => \($self->{pureperl_only}),
         "static-install!" => \($self->{static_install}),
-        (map $with_option->($_), qw(requires recommends suggests)),
-        (map $with_option->($_), qw(configure build test runtime develop)),
+        "with-all" => sub { map { $self->{"with_$_"} = 1 } @type, @phase },
+        (map $with_option->($_), @type),
+        (map $with_option->($_), @phase),
         "feature=s@" => \@feature,
         "show-build-log-on-failure" => \($self->{show_build_log_on_failure}),
-    or exit 1;
+    or return 0;
 
     $self->{local_lib} = maybe_abs($self->{local_lib}, $self->{cwd}) unless $self->{global};
     $self->{home} = maybe_abs($self->{home}, $self->{cwd});
@@ -132,11 +136,14 @@ sub parse_options {
     $App::cpm::Logger::SHOW_PROGRESS = 1 if $self->{show_progress};
 
     if (@ARGV && $ARGV[0] eq "-") {
-        $self->{argv} = $self->read_argv_from_stdin;
+        my $argv = $self->read_argv_from_stdin;
+        return -1 if @$argv == 0;
+        $self->{argv} = $argv;
         $self->{cpanfile} = undef;
     } else {
         $self->{argv} = \@ARGV;
     }
+    return 1;
 }
 
 sub read_argv_from_stdin {
@@ -193,7 +200,9 @@ sub run {
     $cmd = "version" if $cmd =~ /^(-V|--version)$/;
     if (my $sub = $self->can("cmd_$cmd")) {
         return $self->$sub(@argv) if $cmd eq "exec";
-        $self->parse_options(@argv);
+        my $ok = $self->parse_options(@argv);
+        return 1 if !$ok;
+        return 0 if $ok == -1;
         return $self->$sub;
     } else {
         my $message = $cmd =~ /^-/ ? "Missing subcommand" : "Unknown subcommand '$cmd'";
@@ -547,7 +556,10 @@ sub generate_resolver {
                     mirror => @arg ? $self->normalize_mirror($arg[0]) : $self->{mirror},
                 );
             } else {
-                die "Unknown resolver: $klass\n";
+                my $full_klass = $klass =~ s/^\+// ? $klass : "App::cpm::Resolver::$klass";
+                (my $file = $full_klass) =~ s{::}{/}g;
+                require "$file.pm"; # may die
+                $resolver = $full_klass->new(@arg);
             }
             $cascade->add($resolver);
         }

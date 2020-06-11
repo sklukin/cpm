@@ -45,7 +45,7 @@ die "cpm `$bin_cpm` not found" unless -f $bin_cpm;
 my $lib_cpm = [$build_dir . '/local/lib/perl5'];
 eval "use lib '$build_dir/local/lib/perl5';";
 if ($dev_cpm && $path_cpm) {
-    push @$lib_cpm, ($path_cpm . '../../lib', $path_cpm . '../../local/lib/perl5');
+    push @$lib_cpm, ($path_cpm . '/../lib', $path_cpm . '/../local/lib/perl5');
 }
 
 make_path($build_dir) unless -d $build_dir;

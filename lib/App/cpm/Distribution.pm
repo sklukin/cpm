@@ -153,9 +153,10 @@ sub providing {
     for my $provide (@{$self->provides}) {
         if ($provide->{package} eq $package) {
             if (!$version_range or App::cpm::version->parse($provide->{version})->satisfy($version_range)) {
-                if (($provide->{ref} and $ref and $provide->{ref} ne $ref) or (!$provide->{ref} and $ref)) {
+                my $provide_ref = $provide->{ref} || 'master';
+                if ($ref and $provide_ref ne $ref) {
                     my $message = sprintf "%s provides ref %s (%s), but needs %s\n",
-                        $self->distfile, $package, $provide->{ref} || 'master', $ref;
+                        $self->distfile, $package, $provide_ref, $ref;
                     App::cpm::Logger->log(result => "WARN", message => $message);
                     last;
                 } else {

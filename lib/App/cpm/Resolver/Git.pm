@@ -16,6 +16,7 @@ sub fetch_rev {
     ($uri) = App::cpm::Git->split_uri($uri);
     my ($rev, $version) = `git ls-remote --tags $uri $ref^{}` =~ /^(\p{IsXDigit}{40})\s+(?:refs\/tags\/(v?\d+\.\d+(?:\.\d+)?)(\^\{\})?$)?/;
     ($rev, $version) = `git ls-remote --tags $uri $ref` =~ /^(\p{IsXDigit}{40})\s+(?:refs\/tags\/(v?\d+\.\d+(?:\.\d+)?)(\^\{\})?$)?/ unless $rev;;
+    ($rev, $version) = `git ls-remote --refs $uri $ref` =~ /^(\p{IsXDigit}{40})\s+(?:refs\/tags\/(v?\d+\.\d+(?:\.\d+)?)(\^\{\})?$)?/ unless $rev;;
     $rev = $ref if !$rev && $ref =~ /^[0-9a-fA-F]{4,}$/;
     return ($rev, $version);
 }
